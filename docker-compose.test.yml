@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  backend-test:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      APP_ENV: test
+      DATABASE_URL: sqlite:///%kernel.project_dir%/var/test.db
+    command: ["./bin/phpunit"]
+
+  frontend-test:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    command: ["npm", "run", "build"]

@@ -1,1 +1,1 @@
-{"version":2,"defects":[],"times":{"App\\Tests\\ProductApiTest::testGetProductsCollection":0.291,"App\\Tests\\ProductApiTest::testCreateProductApi":0.025}}
+{"version":2,"defects":[],"times":{"App\\Tests\\ProductApiTest::testGetProductsCollection":0.367,"App\\Tests\\ProductApiTest::testCreateProductApi":0.026,"App\\Tests\\Unit\\ProductUnitTest::testProductInitialValues":0.001,"App\\Tests\\Unit\\ProductUnitTest::testProductGettersAndSetters":0.001,"App\\Tests\\Unit\\UserUnitTest::testUserInitialValues":0.001,"App\\Tests\\Unit\\UserUnitTest::testUserGettersAndSetters":0.001}}
