@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # TLS Reverse Proxy (Caddy)
+  proxy:
+    image: caddy:2-alpine
+    container_name: tls_3tier_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+  # Symfony 7 Backend (API Platform & EasyAdmin)
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: tls_3tier_backend
+    volumes:
+      - ./backend:/var/www/backend
+    environment:
+      APP_ENV: dev
+      APP_SECRET: c06a092ff33719b4ba1ca7569b4cb0fa
+      DATABASE_URL: postgresql://symfony:symfony_pass@db:5432/app_db?serverVersion=16&charset=utf8
+      CORS_ALLOW_ORIGIN: '*'
+    depends_on:
+      - db
+
+  # React Frontend (Vite)
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: tls_3tier_frontend
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    environment:
+      VITE_API_URL: https://localhost/api
+
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: tls_3tier_db
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: symfony
+      POSTGRES_PASSWORD: symfony_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  caddy_data:
+  caddy_config:
+  db_data:

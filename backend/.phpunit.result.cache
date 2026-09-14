@@ -1,0 +1,1 @@
+{"version":2,"defects":[],"times":{"App\\Tests\\ProductApiTest::testGetProductsCollection":0.291,"App\\Tests\\ProductApiTest::testCreateProductApi":0.025}}

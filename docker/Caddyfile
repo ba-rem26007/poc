@@ -1,0 +1,36 @@
+# Caddy configuration for 3-Tier TLS Setup
+
+https://localhost {
+    tls internal
+
+    # EasyAdmin dashboard and Symfony security
+    handle /admin* {
+        reverse_proxy backend:8000
+    }
+
+    handle /login* {
+        reverse_proxy backend:8000
+    }
+
+    handle /logout* {
+        reverse_proxy backend:8000
+    }
+
+    # API Platform endpoints & Swagger UI
+    handle /api* {
+        reverse_proxy backend:8000
+    }
+
+    handle /_profiler* {
+        reverse_proxy backend:8000
+    }
+
+    handle /_wdt* {
+        reverse_proxy backend:8000
+    }
+
+    # React Frontend application
+    handle {
+        reverse_proxy frontend:5173
+    }
+}
