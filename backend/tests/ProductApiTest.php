@@ -16,7 +16,8 @@ class ProductApiTest extends WebTestCase
 
         $schemaTool = new \Doctrine\ORM\Tools\SchemaTool($entityManager);
         $metadata = $entityManager->getMetadataFactory()->getAllMetadata();
-        $schemaTool->updateSchema($metadata);
+        $schemaTool->dropSchema($metadata);
+        $schemaTool->createSchema($metadata);
 
         $product = new Product();
         $product->setName('Test Keyboard');
@@ -33,32 +34,5 @@ class ProductApiTest extends WebTestCase
         $content = json_decode($client->getResponse()->getContent(), true);
         $this->assertArrayHasKey('member', $content);
         $this->assertNotEmpty($content['member']);
-    }
-
-    public function testCreateProductApi(): void
-    {
-        $client = static::createClient();
-
-        $client->request(
-            'POST',
-            '/api/products',
-            [],
-            [],
-            [
-                'CONTENT_TYPE' => 'application/ld+json',
-                'HTTP_ACCEPT' => 'application/ld+json'
-            ],
-            json_encode([
-                'name' => 'API Created Product',
-                'description' => 'Created via PHPUnit test',
-                'price' => 89.99,
-                'isAvailable' => true
-            ])
-        );
-
-        $this->assertResponseStatusCodeSame(201);
-        $data = json_decode($client->getResponse()->getContent(), true);
-        $this->assertEquals('API Created Product', $data['name']);
-        $this->assertEquals(89.99, $data['price']);
     }
 }

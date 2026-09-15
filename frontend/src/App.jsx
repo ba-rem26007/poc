@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, ShieldCheck, RefreshCw, ExternalLink, Plus, Trash2, CheckCircle2, XCircle } from 'lucide-react';
+import { sendErrorToBackend } from './logger';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://localhost/api';
 
@@ -7,20 +7,56 @@ export function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Auth state
+  const [token, setToken] = useState(() => localStorage.getItem('jwt_token') || '');
+  const [loginEmail, setLoginEmail] = useState('admin@example.com');
+  const [loginPassword, setLoginPassword] = useState('admin123');
+  const [loginError, setLoginError] = useState('');
+  const [authenticating, setAuthenticating] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Form state
   const [newProduct, setNewProduct] = useState({ name: '', description: '', price: '', isAvailable: true });
   const [creating, setCreating] = useState(false);
+
+  // Edit Product Modal State
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [updating, setUpdating] = useState(false);
+
+  // Toast State
+  const [toast, setToast] = useState({ message: '', type: '' });
+
+  const showToast = (message, type = 'danger') => {
+    setToast({ message, type });
+    setTimeout(() => setToast({ message: '', type: '' }), 4000);
+  };
+
+  useEffect(() => {
+    const handleGlobalError = (event) => {
+      sendErrorToBackend(event.error || event.message);
+      showToast(event.message || 'An unexpected error occurred', 'danger');
+    };
+    window.addEventListener('error', handleGlobalError);
+    return () => window.removeEventListener('error', handleGlobalError);
+  }, []);
 
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/products`, {
-        headers: {
-          'Accept': 'application/ld+json',
-        },
-      });
+      const headers = {
+        'Accept': 'application/ld+json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_BASE}/products`, { headers });
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        const msg = `Error ${response.status}: ${response.statusText}`;
+        sendErrorToBackend(msg, 'fetchProducts failed');
+        throw new Error(msg);
       }
       const data = await response.json();
       setProducts(data['member'] || data['hydra:member'] || data);
@@ -33,19 +69,68 @@ export function App() {
 
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, [token]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setAuthenticating(true);
+    try {
+      const response = await fetch(`${API_BASE}/login_check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginEmail, password: loginPassword }),
+      });
+
+      if (!response.ok) {
+        const msg = 'Invalid credentials';
+        sendErrorToBackend(msg, `Login attempt failed for ${loginEmail}`);
+        throw new Error(msg);
+      }
+
+      const data = await response.json();
+      if (data.token) {
+        setToken(data.token);
+        localStorage.setItem('jwt_token', data.token);
+        setShowLoginModal(false);
+        showToast('Successfully authenticated via JWT!', 'success');
+      } else {
+        throw new Error('No token received');
+      }
+    } catch (err) {
+      setLoginError(err.message || 'Authentication failed');
+    } finally {
+      setAuthenticating(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setToken('');
+    localStorage.removeItem('jwt_token');
+    showToast('Logged out from JWT session', 'info');
+  };
 
   const handleCreateProduct = async (e) => {
     e.preventDefault();
     if (!newProduct.name || !newProduct.price) return;
+
+    if (!token) {
+      setShowLoginModal(true);
+      showToast('Please log in with JWT to create products', 'warning');
+      return;
+    }
+
     setCreating(true);
     try {
+      const headers = {
+        'Content-Type': 'application/ld+json',
+        'Accept': 'application/ld+json',
+        'Authorization': `Bearer ${token}`
+      };
+
       const response = await fetch(`${API_BASE}/products`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/ld+json',
-          'Accept': 'application/ld+json',
-        },
+        headers,
         body: JSON.stringify({
           name: newProduct.name,
           description: newProduct.description,
@@ -55,226 +140,336 @@ export function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to create product (${response.status})`);
+        const msg = response.status === 401 || response.status === 403
+          ? 'Authentication required or insufficient permissions'
+          : `Failed to create product (${response.status})`;
+        sendErrorToBackend(msg, JSON.stringify(newProduct));
+        throw new Error(msg);
       }
 
       setNewProduct({ name: '', description: '', price: '', isAvailable: true });
+      showToast('Product created successfully!', 'success');
       await fetchProducts();
     } catch (err) {
-      alert(`Error creating product: ${err.message}`);
+      showToast(err.message, 'danger');
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDeleteProduct = async (id) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+  const handleUpdateProduct = async (e) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    if (!token) {
+      setShowLoginModal(true);
+      showToast('Please log in with JWT to edit products', 'warning');
+      return;
+    }
+
+    setUpdating(true);
     try {
-      const response = await fetch(`${API_BASE}/products/${id}`, {
-        method: 'DELETE',
+      const headers = {
+        'Content-Type': 'application/ld+json',
+        'Accept': 'application/ld+json',
+        'Authorization': `Bearer ${token}`
+      };
+
+      const productId = editingProduct.id || editingProduct['@id'].split('/').pop();
+      const response = await fetch(`${API_BASE}/products/${productId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          name: editingProduct.name,
+          description: editingProduct.description,
+          price: parseFloat(editingProduct.price),
+          isAvailable: editingProduct.isAvailable,
+        }),
       });
+
       if (!response.ok) {
-        throw new Error(`Failed to delete product (${response.status})`);
+        const msg = response.status === 401 || response.status === 403
+          ? 'Authentication required or insufficient permissions'
+          : `Failed to update product (${response.status})`;
+        sendErrorToBackend(msg, JSON.stringify(editingProduct));
+        throw new Error(msg);
       }
+
+      setEditingProduct(null);
+      showToast('Product updated successfully!', 'success');
       await fetchProducts();
     } catch (err) {
-      alert(`Error deleting product: ${err.message}`);
+      showToast(err.message, 'danger');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDeleteProduct = async (id) => {
+    if (!token) {
+      setShowLoginModal(true);
+      showToast('Please log in with JWT to delete products', 'warning');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this product?')) return;
+    try {
+      const headers = {
+        'Authorization': `Bearer ${token}`
+      };
+
+      const response = await fetch(`${API_BASE}/products/${id}`, {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (!response.ok) {
+        const msg = response.status === 403
+          ? 'Only Admin users can delete products'
+          : `Failed to delete product (${response.status})`;
+        sendErrorToBackend(msg, `Product ID: ${id}`);
+        throw new Error(msg);
+      }
+
+      showToast('Product deleted', 'info');
+      await fetchProducts();
+    } catch (err) {
+      showToast(err.message, 'danger');
     }
   };
 
   return (
-    <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', color: '#0f172a' }}>
-      {/* Header */}
-      <header style={{ backgroundColor: '#1e293b', color: '#fff', padding: '1.25rem 2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Package style={{ width: '32px', height: '32px', color: '#38bdf8' }} />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, letterSpacing: '-0.025em' }}>
-                3-Tier TLS Platform
-              </h1>
-              <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>React Frontend &bull; Symfony API Platform &bull; EasyAdmin</span>
-            </div>
+    <div className="bg-light min-vh-100">
+
+      {/* Bootstrap Toast Alert */}
+      {toast.message && (
+        <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080 }}>
+          <div className={`alert alert-${toast.type} alert-dismissible fade show shadow-lg`} role="alert">
+            <i className="fas fa-info-circle me-2"></i>
+            {toast.message}
+            <button type="button" className="btn-close" onClick={() => setToast({ message: '', type: '' })}></button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: '#064e3b', color: '#34d399', padding: '0.35rem 0.75rem', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 600 }}>
-              <ShieldCheck style={{ width: '16px', height: '16px' }} /> TLS Encrypted
+        </div>
+      )}
+
+      {/* Bootstrap Navbar with FontAwesome Icons */}
+      <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm py-3">
+        <div className="container">
+          <a className="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
+            <i className="fas fa-cubes text-info fs-4"></i>
+            <span>3-Tier TLS Platform (PWA)</span>
+          </a>
+
+          <div className="d-flex align-items-center gap-2">
+            <span className="badge bg-success d-inline-flex align-items-center gap-1 px-2 py-2">
+              <i className="fas fa-lock"></i> TLS Encrypted
             </span>
-            <a
-              href="https://localhost/admin"
-              target="_blank"
-              rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: '#3b82f6', color: '#fff', padding: '0.45rem 0.9rem', borderRadius: '0.375rem', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}
-            >
-              EasyAdmin <ExternalLink style={{ width: '14px', height: '14px' }} />
+
+            {token ? (
+              <div className="d-flex align-items-center gap-2">
+                <span className="badge bg-primary d-inline-flex align-items-center gap-1 px-2 py-2">
+                  <i className="fas fa-key"></i> JWT Active
+                </span>
+                <button className="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" onClick={handleLogout}>
+                  <i className="fas fa-sign-out-alt"></i> Logout
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-success btn-sm d-flex align-items-center gap-1 fw-semibold" onClick={() => setShowLoginModal(true)}>
+                <i className="fas fa-sign-in-alt"></i> JWT Login
+              </button>
+            )}
+
+            <a href="https://localhost/admin" target="_blank" rel="noreferrer" className="btn btn-primary btn-sm d-flex align-items-center gap-1">
+              <i className="fas fa-user-shield"></i> EasyAdmin
             </a>
-            <a
-              href="https://localhost/api"
-              target="_blank"
-              rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: '#334155', color: '#e2e8f0', padding: '0.45rem 0.9rem', borderRadius: '0.375rem', fontSize: '0.875rem', fontWeight: 600, textDecoration: 'none' }}
-            >
-              Swagger Docs <ExternalLink style={{ width: '14px', height: '14px' }} />
+            <a href="https://localhost/api" target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm d-flex align-items-center gap-1">
+              <i className="fas fa-book"></i> Swagger
             </a>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* Main Content */}
-      <main style={{ maxWidth: '1100px', margin: '2rem auto', padding: '0 1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+      {/* Main Container */}
+      <div className="container my-4">
 
-          {/* Create Product Form */}
-          <div style={{ backgroundColor: '#fff', borderRadius: '0.75rem', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', height: 'fit-content' }}>
-            <h2 style={{ marginTop: 0, fontSize: '1.25rem', fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              Add New Product
-            </h2>
-            <form onSubmit={handleCreateProduct} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.25rem' }}>Product Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newProduct.name}
-                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                  placeholder="e.g. Wireless Mouse"
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                />
+        {/* JWT Modal */}
+        {showLoginModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content shadow">
+                <div className="modal-header">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-shield-alt text-success me-2"></i>JWT API Authentication</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowLoginModal(false)}></button>
+                </div>
+                <form onSubmit={handleLogin}>
+                  <div className="modal-body">
+                    <p className="text-muted small">Sign in via <code>/api/login_check</code> as <code>admin@example.com</code> or <code>user@example.com</code>.</p>
+
+                    {loginError && (
+                      <div className="alert alert-danger py-2 small"><i className="fas fa-exclamation-circle me-1"></i>{loginError}</div>
+                    )}
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Email address</label>
+                      <input type="email" className="form-control" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Password</label>
+                      <input type="password" className="form-control" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowLoginModal(false)}>Cancel</button>
+                    <button type="submit" className="btn btn-success" disabled={authenticating}>
+                      {authenticating ? 'Signing in...' : 'Sign In'}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.25rem' }}>Description</label>
-                <textarea
-                  value={newProduct.description}
-                  onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
-                  placeholder="Product details..."
-                  rows={3}
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                />
+            </div>
+          </div>
+        )}
+
+        {/* Edit Product Modal */}
+        {editingProduct && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content shadow">
+                <div className="modal-header">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-edit me-2 text-primary"></i>Edit Product</h5>
+                  <button type="button" className="btn-close" onClick={() => setEditingProduct(null)}></button>
+                </div>
+                <form onSubmit={handleUpdateProduct}>
+                  <div className="modal-body">
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Product Name</label>
+                      <input type="text" className="form-control" required value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Description</label>
+                      <textarea className="form-control" rows="3" value={editingProduct.description || ''} onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}></textarea>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Price ($)</label>
+                      <input type="number" step="0.01" className="form-control" required value={editingProduct.price} onChange={(e) => setEditingProduct({ ...editingProduct, price: e.target.value })} />
+                    </div>
+                    <div className="form-check mb-3">
+                      <input className="form-check-input" type="checkbox" id="editCheck" checked={editingProduct.isAvailable ?? editingProduct.available} onChange={(e) => setEditingProduct({ ...editingProduct, isAvailable: e.target.checked, available: e.target.checked })} />
+                      <label className="form-check-label fw-semibold" htmlFor="editCheck">In Stock</label>
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={() => setEditingProduct(null)}>Cancel</button>
+                    <button type="submit" className="btn btn-primary" disabled={updating}>
+                      {updating ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.25rem' }}>Price ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={newProduct.price}
-                  onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                  placeholder="29.99"
-                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                />
+            </div>
+          </div>
+        )}
+
+        {/* 2-Column Layout */}
+        <div className="row g-4">
+
+          {/* Left Column: Create Product Form */}
+          <div className="col-lg-4">
+            <div className="card shadow-sm border-0">
+              <div className="card-header bg-white border-bottom py-3">
+                <h5 className="card-title mb-0 fw-bold"><i className="fas fa-plus-circle text-primary me-2"></i>Add New Product</h5>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  id="isAvailable"
-                  checked={newProduct.isAvailable}
-                  onChange={(e) => setNewProduct({ ...newProduct, isAvailable: e.target.checked })}
-                />
-                <label htmlFor="isAvailable" style={{ fontSize: '0.875rem', fontWeight: 500 }}>Available in Stock</label>
+              <div className="card-body">
+                <form onSubmit={handleCreateProduct}>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold small">Product Name</label>
+                    <input type="text" className="form-control" required value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="e.g. Wireless Mouse" />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold small">Description</label>
+                    <textarea className="form-control" rows="3" value={newProduct.description} onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })} placeholder="Product details..."></textarea>
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label fw-semibold small">Price ($)</label>
+                    <input type="number" step="0.01" className="form-control" required value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} placeholder="29.99" />
+                  </div>
+                  <div className="form-check mb-3">
+                    <input className="form-check-input" type="checkbox" id="addCheck" checked={newProduct.isAvailable} onChange={(e) => setNewProduct({ ...newProduct, isAvailable: e.target.checked })} />
+                    <label className="form-check-label small fw-semibold" htmlFor="addCheck">Available in Stock</label>
+                  </div>
+                  <button type="submit" className="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2 fw-semibold" disabled={creating}>
+                    <i className="fas fa-plus"></i> {creating ? 'Saving...' : 'Add Product'}
+                  </button>
+                </form>
               </div>
-              <button
-                type="submit"
-                disabled={creating}
-                style={{
-                  backgroundColor: '#2563eb',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '0.65rem 1rem',
-                  borderRadius: '0.375rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  marginTop: '0.5rem'
-                }}
-              >
-                <Plus style={{ width: '18px', height: '18px' }} /> {creating ? 'Saving...' : 'Add Product'}
-              </button>
-            </form>
+            </div>
           </div>
 
-          {/* Product Catalog List */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#1e293b' }}>
-                Catalog Products ({products.length})
-              </h2>
-              <button
-                onClick={fetchProducts}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-              >
-                <RefreshCw style={{ width: '14px', height: '14px' }} /> Refresh
+          {/* Right Column: Catalog List */}
+          <div className="col-lg-8">
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="fw-bold mb-0"><i className="fas fa-boxes text-secondary me-2"></i>Catalog Products ({products.length})</h5>
+              <button className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" onClick={fetchProducts}>
+                <i className="fas fa-sync-alt"></i> Refresh
               </button>
             </div>
 
-            {loading && <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Loading products from Symfony API...</div>}
+            {loading && <div className="text-center py-5 text-muted"><i className="fas fa-spinner fa-spin me-2"></i>Loading products from Symfony API...</div>}
 
             {error && (
-              <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
-                <strong>API Connection Error:</strong> {error}
+              <div className="alert alert-danger d-flex align-items-center gap-2 shadow-sm" role="alert">
+                <i className="fas fa-exclamation-triangle fs-4"></i>
+                <div><strong>API Error:</strong> {error}</div>
               </div>
             )}
 
             {!loading && !error && products.length === 0 && (
-              <div style={{ backgroundColor: '#fff', padding: '2rem', textAlign: 'center', borderRadius: '0.75rem', color: '#64748b' }}>
+              <div className="card border-0 shadow-sm text-center py-5 text-muted">
                 No products found. Add one using the form on the left.
               </div>
             )}
 
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="d-flex flex-column gap-3">
               {products.map((product) => {
                 const available = product.available ?? product.isAvailable;
+                const productId = product.id || product['@id'].split('/').pop();
                 return (
-                  <div
-                    key={product.id || product['@id']}
-                    style={{
-                      backgroundColor: '#fff',
-                      borderRadius: '0.75rem',
-                      padding: '1.25rem',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      border: '1px solid #e2e8f0'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: '#0f172a' }}>{product.name}</h3>
-                        {available ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', color: '#16a34a', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#dcfce7', padding: '0.15rem 0.5rem', borderRadius: '9999px' }}>
-                            <CheckCircle2 style={{ width: '12px', height: '12px' }} /> In Stock
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', color: '#dc2626', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#fee2e2', padding: '0.15rem 0.5rem', borderRadius: '9999px' }}>
-                            <XCircle style={{ width: '12px', height: '12px' }} /> Out of Stock
-                          </span>
-                        )}
+                  <div key={product.id || product['@id']} className="card border-0 shadow-sm">
+                    <div className="card-body d-flex justify-content-between align-items-center">
+                      <div>
+                        <div className="d-flex align-items-center gap-2 mb-1">
+                          <h6 className="fw-bold mb-0">{product.name}</h6>
+                          {available ? (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill">
+                              <i className="fas fa-check-circle me-1"></i>In Stock
+                            </span>
+                          ) : (
+                            <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">
+                              <i className="fas fa-times-circle me-1"></i>Out of Stock
+                            </span>
+                          )}
+                        </div>
+                        <p className="card-text text-muted small mb-2">{product.description || 'No description provided.'}</p>
+                        <span className="fw-bold fs-5 text-dark">${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</span>
                       </div>
-                      <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: '#64748b' }}>
-                        {product.description || 'No description provided.'}
-                      </p>
-                      <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
-                        ${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}
+
+                      <div className="d-flex gap-1">
+                        <button className="btn btn-outline-primary btn-sm p-2" title="Edit Product" onClick={() => setEditingProduct(product)}>
+                          <i className="fas fa-edit"></i>
+                        </button>
+                        <button className="btn btn-outline-danger btn-sm p-2" title="Delete Product" onClick={() => handleDeleteProduct(productId)}>
+                          <i className="fas fa-trash"></i>
+                        </button>
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => handleDeleteProduct(product.id || product['@id'].split('/').pop())}
-                      style={{ backgroundColor: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.5rem', borderRadius: '0.375rem' }}
-                      title="Delete Product"
-                    >
-                      <Trash2 style={{ width: '18px', height: '18px' }} />
-                    </button>
                   </div>
                 );
               })}
             </div>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
