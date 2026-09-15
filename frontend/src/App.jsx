@@ -16,6 +16,25 @@ export function App() {
   const [authenticating, setAuthenticating] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
+  // Profile Modal State
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profile, setProfile] = useState({ fullName: '', email: '', isTwoFactorEnabled: false });
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  // Password Reset Modal State
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetTokenInput, setResetTokenInput] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [generatedToken, setGeneratedToken] = useState('');
+  const [resetStep, setResetStep] = useState(1);
+
+  // Notifications State
+  const [notifications, setNotifications] = useState([]);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+
   // Form state
   const [newProduct, setNewProduct] = useState({ name: '', description: '', price: '', isAvailable: true });
   const [creating, setCreating] = useState(false);
@@ -45,12 +64,8 @@ export function App() {
     setLoading(true);
     setError(null);
     try {
-      const headers = {
-        'Accept': 'application/ld+json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      const headers = { 'Accept': 'application/ld+json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const response = await fetch(`${API_BASE}/products`, { headers });
       if (!response.ok) {
@@ -67,8 +82,45 @@ export function App() {
     }
   };
 
+  const fetchUserProfile = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE}/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setProfile(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE}/notifications`, {
+        headers: { 'Accept': 'application/ld+json', 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data['member'] || data['hydra:member'] || data || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    if (token) {
+      fetchUserProfile();
+      fetchNotifications();
+    } else {
+      setProfile({ fullName: '', email: '', isTwoFactorEnabled: false });
+      setNotifications([]);
+    }
   }, [token]);
 
   const handleLogin = async (e) => {
@@ -108,6 +160,85 @@ export function App() {
     setToken('');
     localStorage.removeItem('jwt_token');
     showToast('Logged out from JWT session', 'info');
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setUpdatingProfile(true);
+    try {
+      const response = await fetch(`${API_BASE}/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          fullName: profile.fullName,
+          isTwoFactorEnabled: profile.isTwoFactorEnabled,
+          currentPassword: currentPassword || undefined,
+          newPassword: newPassword || undefined
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to update profile');
+      }
+
+      const data = await response.json();
+      setProfile(data);
+      setCurrentPassword('');
+      setNewPassword('');
+      setShowProfileModal(false);
+      showToast('Profile updated successfully!', 'success');
+    } catch (err) {
+      showToast(err.message, 'danger');
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
+  const handleRequestPasswordReset = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_BASE}/password_reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail })
+      });
+      const data = await response.json();
+      if (data.resetToken) {
+        setGeneratedToken(data.resetToken);
+        setResetTokenInput(data.resetToken);
+      }
+      showToast('Password reset token generated!', 'info');
+      setResetStep(2);
+    } catch (err) {
+      showToast('Failed to request password reset', 'danger');
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_BASE}/password_reset/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetTokenInput, newPassword: resetNewPassword })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Password reset failed');
+      }
+
+      showToast('Password reset successfully! You can now log in.', 'success');
+      setShowResetModal(false);
+      setResetStep(1);
+      setShowLoginModal(true);
+    } catch (err) {
+      showToast(err.message, 'danger');
+    }
   };
 
   const handleCreateProduct = async (e) => {
@@ -214,9 +345,7 @@ export function App() {
 
     if (!confirm('Are you sure you want to delete this product?')) return;
     try {
-      const headers = {
-        'Authorization': `Bearer ${token}`
-      };
+      const headers = { 'Authorization': `Bearer ${token}` };
 
       const response = await fetch(`${API_BASE}/products/${id}`, {
         method: 'DELETE',
@@ -241,7 +370,7 @@ export function App() {
   return (
     <div className="bg-light min-vh-100">
 
-      {/* Bootstrap Toast Alert */}
+      {/* Toast Alert */}
       {toast.message && (
         <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080 }}>
           <div className={`alert alert-${toast.type} alert-dismissible fade show shadow-lg`} role="alert">
@@ -252,7 +381,7 @@ export function App() {
         </div>
       )}
 
-      {/* Bootstrap Navbar with FontAwesome Icons */}
+      {/* Navbar */}
       <nav className="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm py-3">
         <div className="container">
           <a className="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
@@ -267,9 +396,38 @@ export function App() {
 
             {token ? (
               <div className="d-flex align-items-center gap-2">
-                <span className="badge bg-primary d-inline-flex align-items-center gap-1 px-2 py-2">
-                  <i className="fas fa-key"></i> JWT Active
-                </span>
+                {/* Notifications Dropdown */}
+                <div className="position-relative">
+                  <button className="btn btn-outline-light btn-sm position-relative" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}>
+                    <i className="fas fa-bell"></i>
+                    {notifications.length > 0 && (
+                      <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                        {notifications.length}
+                      </span>
+                    )}
+                  </button>
+                  {showNotificationsDropdown && (
+                    <div className="position-absolute end-0 mt-2 bg-white text-dark rounded shadow p-2" style={{ width: '280px', zIndex: 1050 }}>
+                      <h6 className="fw-bold border-bottom pb-2 mb-2"><i className="fas fa-bell me-1"></i>Notifications</h6>
+                      {notifications.length === 0 ? (
+                        <p className="text-muted small mb-0">No new notifications</p>
+                      ) : (
+                        notifications.map((n, i) => (
+                          <div key={i} className="p-1 border-bottom small">
+                            <strong>{n.title}</strong>
+                            <p className="mb-0 text-muted">{n.message}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Profile Button */}
+                <button className="btn btn-outline-info btn-sm d-flex align-items-center gap-1" onClick={() => setShowProfileModal(true)}>
+                  <i className="fas fa-user-circle"></i> Profile
+                </button>
+
                 <button className="btn btn-outline-danger btn-sm d-flex align-items-center gap-1" onClick={handleLogout}>
                   <i className="fas fa-sign-out-alt"></i> Logout
                 </button>
@@ -293,7 +451,7 @@ export function App() {
       {/* Main Container */}
       <div className="container my-4">
 
-        {/* JWT Modal */}
+        {/* JWT Login Modal */}
         {showLoginModal && (
           <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
             <div className="modal-dialog modal-dialog-centered">
@@ -318,6 +476,11 @@ export function App() {
                       <label className="form-label fw-semibold">Password</label>
                       <input type="password" className="form-control" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                     </div>
+                    <div className="text-end">
+                      <button type="button" className="btn btn-link btn-sm text-decoration-none p-0" onClick={() => { setShowLoginModal(false); setShowResetModal(true); }}>
+                        Forgot Password?
+                      </button>
+                    </div>
                   </div>
                   <div className="modal-footer">
                     <button type="button" className="btn btn-secondary" onClick={() => setShowLoginModal(false)}>Cancel</button>
@@ -326,6 +489,101 @@ export function App() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Modal */}
+        {showProfileModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content shadow">
+                <div className="modal-header">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-user-circle text-info me-2"></i>Mon Profil</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowProfileModal(false)}></button>
+                </div>
+                <form onSubmit={handleUpdateProfile}>
+                  <div className="modal-body">
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Email</label>
+                      <input type="email" className="form-control" disabled value={profile.email || ''} />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Nom Complet</label>
+                      <input type="text" className="form-control" value={profile.fullName || ''} onChange={(e) => setProfile({ ...profile, fullName: e.target.value })} placeholder="ex: Jules Dupont" />
+                    </div>
+
+                    <div className="form-check form-switch mb-3">
+                      <input className="form-check-input" type="checkbox" id="2faSwitch" checked={profile.isTwoFactorEnabled} onChange={(e) => setProfile({ ...profile, isTwoFactorEnabled: e.target.checked })} />
+                      <label className="form-check-label fw-semibold" htmlFor="2faSwitch">Activer Sécurité 2FA (Double Authentification)</label>
+                    </div>
+
+                    <hr />
+                    <h6 className="fw-bold text-secondary mb-3"><i className="fas fa-key me-1"></i>Changer le mot de passe</h6>
+                    <div className="mb-3">
+                      <label className="form-label small fw-semibold">Mot de passe actuel</label>
+                      <input type="password" className="form-control" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label small fw-semibold">Nouveau mot de passe</label>
+                      <input type="password" className="form-control" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowProfileModal(false)}>Fermer</button>
+                    <button type="submit" className="btn btn-primary" disabled={updatingProfile}>
+                      {updatingProfile ? 'Enregistrement...' : 'Mettre à jour'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Password Reset Modal */}
+        {showResetModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content shadow">
+                <div className="modal-header">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-unlock-alt me-2 text-warning"></i>Mot de Passe Oublié</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowResetModal(false)}></button>
+                </div>
+                {resetStep === 1 ? (
+                  <form onSubmit={handleRequestPasswordReset}>
+                    <div className="modal-body">
+                      <p className="text-muted small">Entrez votre email pour générer un jeton de réinitialisation.</p>
+                      <div className="mb-3">
+                        <label className="form-label fw-semibold">Adresse Email</label>
+                        <input type="email" className="form-control" required value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="admin@example.com" />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowResetModal(false)}>Annuler</button>
+                      <button type="submit" className="btn btn-warning">Générer le jeton</button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleResetPassword}>
+                    <div className="modal-body">
+                      <p className="text-muted small">Un jeton a été généré : <code>{generatedToken}</code></p>
+                      <div className="mb-3">
+                        <label className="form-label fw-semibold">Jeton de réinitialisation</label>
+                        <input type="text" className="form-control" required value={resetTokenInput} onChange={(e) => setResetTokenInput(e.target.value)} />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label fw-semibold">Nouveau Mot de Passe</label>
+                        <input type="password" className="form-control" required value={resetNewPassword} onChange={(e) => setResetNewPassword(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button type="button" className="btn btn-secondary" onClick={() => setResetStep(1)}>Retour</button>
+                      <button type="submit" className="btn btn-success">Réinitialiser le mot de passe</button>
+                    </div>
+                  </form>
+                )}
               </div>
             </div>
           </div>
