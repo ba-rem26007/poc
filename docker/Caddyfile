@@ -1,7 +1,8 @@
-# Caddy configuration for 3-Tier TLS Setup
+# Caddy configuration for 3-Tier TLS Setup (Development & Production poc.d1dev.fr)
 
-https://localhost {
-    tls internal
+poc.d1dev.fr, https://localhost {
+    # If request is for localhost, use internal self-signed TLS.
+    # Caddy automatically provisions Let's Encrypt certificates for poc.d1dev.fr!
 
     # EasyAdmin dashboard and Symfony security
     handle /admin* {

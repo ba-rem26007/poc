@@ -1,0 +1,66 @@
+name: CI/CD Pipeline & Deployment to Debian (poc.d1dev.fr)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run PHPUnit Tests & Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_sqlite
+          coverage: none
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          composer install --prefer-dist --no-progress
+
+      - name: Generate JWT Keys for Testing
+        run: |
+          mkdir -p backend/config/jwt
+          openssl genpkey -out backend/config/jwt/private.pem -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+          openssl pkey -in backend/config/jwt/private.pem -out backend/config/jwt/public.pem -pubout
+
+      - name: Run Backend PHPUnit Tests
+        run: |
+          cd backend
+          ./bin/phpunit
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build React Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+  deploy:
+    name: Deploy to Debian Server (poc.d1dev.fr)
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: poc.d1dev.fr
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /var/www/3tier-tls-app || git clone https://github.com/${{ github.repository }}.git /var/www/3tier-tls-app
+            cd /var/www/3tier-tls-app
+            bash deploy.sh

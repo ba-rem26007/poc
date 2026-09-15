@@ -92,14 +92,18 @@ class ProfileController extends AbstractController
             $user->setPasswordResetExpiresAt((new \DateTimeImmutable())->modify('+1 hour'));
             $entityManager->flush();
 
-            // In production, an email would be dispatched here.
-            return $this->json([
-                'message' => 'Reset token generated successfully',
-                'resetToken' => $token // exposed for demo/testing convenience
-            ]);
+            $responseData = ['message' => 'If the email exists, a reset link has been dispatched'];
+
+            // Only expose token in non-production environments (test/dev) for automated testing convenience
+            $env = $this->getParameter('kernel.environment');
+            if ($env === 'test' || $env === 'dev') {
+                $responseData['resetToken'] = $token;
+            }
+
+            return $this->json($responseData);
         }
 
-        return $this->json(['message' => 'If the email exists, a reset link has been created']);
+        return $this->json(['message' => 'If the email exists, a reset link has been dispatched']);
     }
 
     #[Route('/password_reset/reset', name: 'api_password_reset_reset', methods: ['POST'])]
