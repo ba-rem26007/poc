@@ -9,6 +9,10 @@ poc.d1dev.fr, https://localhost {
         reverse_proxy backend:8000
     }
 
+    handle /doc* {
+        reverse_proxy backend:8000
+    }
+
     handle /login* {
         reverse_proxy backend:8000
     }

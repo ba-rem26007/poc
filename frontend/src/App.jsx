@@ -438,6 +438,9 @@ export function App() {
               </button>
             )}
 
+            <a href="https://localhost/doc" target="_blank" rel="noreferrer" className="btn btn-info btn-sm d-flex align-items-center gap-1 text-white fw-semibold">
+              <i className="fas fa-sitemap"></i> Arch Doc
+            </a>
             <a href="https://localhost/admin" target="_blank" rel="noreferrer" className="btn btn-primary btn-sm d-flex align-items-center gap-1">
               <i className="fas fa-user-shield"></i> EasyAdmin
             </a>

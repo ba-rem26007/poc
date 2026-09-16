@@ -21,8 +21,8 @@ services:
       - traefik_net
     labels:
       - "traefik.enable=true"
-      # Route EasyAdmin dashboard
-      - "traefik.http.routers.backend-admin.rule=Host(`poc.d1dev.fr`) && (PathPrefix(`/admin`) || PathPrefix(`/login`) || PathPrefix(`/logout`))"
+      # Route EasyAdmin dashboard & Protected Docs
+      - "traefik.http.routers.backend-admin.rule=Host(`poc.d1dev.fr`) && (PathPrefix(`/admin`) || PathPrefix(`/doc`) || PathPrefix(`/login`) || PathPrefix(`/logout`))"
       - "traefik.http.routers.backend-admin.entrypoints=websecure"
       - "traefik.http.routers.backend-admin.tls.certresolver=myresolver"
       - "traefik.http.routers.backend-admin.service=backend-svc"
