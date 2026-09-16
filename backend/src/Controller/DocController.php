@@ -18,12 +18,14 @@ class DocController extends AbstractController
         $deployDoc = file_exists($docDir . '/deployment.md') ? file_get_contents($docDir . '/deployment.md') : '';
         $solidDoc = file_exists($docDir . '/solid.md') ? file_get_contents($docDir . '/solid.md') : '';
         $ragDoc = file_exists($docDir . '/rag.md') ? file_get_contents($docDir . '/rag.md') : '';
+        $adrDoc = file_exists($docDir . '/adr.md') ? file_get_contents($docDir . '/adr.md') : '';
 
         return $this->render('doc/index.html.twig', [
             'architectureDoc' => $archDoc,
             'deploymentDoc' => $deployDoc,
             'solidDoc' => $solidDoc,
             'ragDoc' => $ragDoc,
+            'adrDoc' => $adrDoc,
         ]);
     }
 }
