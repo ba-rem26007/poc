@@ -25,30 +25,7 @@ class RagApiTest extends WebTestCase
         $entityManager->flush();
     }
 
-    private function getJwtToken($client, string $email, string $password): string
-    {
-        $client->request('POST', '/api/login_check', [], [], [
-            'CONTENT_TYPE' => 'application/json'
-        ], json_encode([
-            'username' => $email,
-            'password' => $password,
-        ]));
-
-        $data = json_decode($client->getResponse()->getContent(), true);
-        return $data['token'] ?? '';
-    }
-
-    public function testRagAskEndpointRequiresAuth(): void
-    {
-        $client = static::createClient();
-        $client->request('POST', '/api/rag/ask', [], [], [
-            'CONTENT_TYPE' => 'application/json'
-        ], json_encode(['question' => 'Which products are in stock?']));
-
-        $this->assertResponseStatusCodeSame(401);
-    }
-
-    public function testRagAskEndpointAuthenticated(): void
+    public function testRagAskEndpointPublic(): void
     {
         $client = static::createClient();
         $container = static::getContainer();
@@ -56,12 +33,8 @@ class RagApiTest extends WebTestCase
 
         $this->initDatabase($entityManager, $container);
 
-        $token = $this->getJwtToken($client, 'user@example.com', 'user123');
-        $this->assertNotEmpty($token);
-
         $client->request('POST', '/api/rag/ask', [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer ' . $token,
-            'CONTENT_TYPE' => 'application/json',
+            'CONTENT_TYPE' => 'application/json'
         ], json_encode(['question' => 'Quels sont les produits disponibles ?']));
 
         $this->assertResponseIsSuccessful();

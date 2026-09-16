@@ -172,21 +172,20 @@ export function App() {
   const handleAskRag = async (e) => {
     e.preventDefault();
     if (!ragQuestion) return;
-    if (!token) {
-      setShowLoginModal(true);
-      showToast('Please log in with JWT to use AI Assistant', 'warning');
-      return;
-    }
 
     setAskingRag(true);
     setRagAnswer('');
     try {
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${API_BASE}/rag/ask`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({ question: ragQuestion })
       });
 

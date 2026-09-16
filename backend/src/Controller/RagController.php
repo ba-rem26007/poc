@@ -10,13 +10,11 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/rag')]
 class RagController extends AbstractController
 {
     #[Route('/ask', name: 'api_rag_ask', methods: ['POST'])]
-    #[IsGranted('ROLE_USER')]
     public function ask(
         Request $request,
         EntityManagerInterface $entityManager
