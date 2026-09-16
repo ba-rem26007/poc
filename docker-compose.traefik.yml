@@ -22,12 +22,12 @@ services:
     labels:
       - "traefik.enable=true"
       # Route EasyAdmin dashboard & Protected Docs
-      - "traefik.http.routers.backend-admin.rule=Host(`poc.d1dev.fr`) && (PathPrefix(`/admin`) || PathPrefix(`/doc`) || PathPrefix(`/login`) || PathPrefix(`/logout`))"
+      - "traefik.http.routers.backend-admin.rule=(Host(`poc.d1dev.fr`) || Host(`preprod-po.d1dev.fr`)) && (PathPrefix(`/admin`) || PathPrefix(`/doc`) || PathPrefix(`/login`) || PathPrefix(`/logout`))"
       - "traefik.http.routers.backend-admin.entrypoints=websecure"
       - "traefik.http.routers.backend-admin.tls.certresolver=myresolver"
       - "traefik.http.routers.backend-admin.service=backend-svc"
       # Route API Platform endpoints
-      - "traefik.http.routers.backend-api.rule=Host(`poc.d1dev.fr`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend-api.rule=(Host(`poc.d1dev.fr`) || Host(`preprod-po.d1dev.fr`)) && PathPrefix(`/api`)"
       - "traefik.http.routers.backend-api.entrypoints=websecure"
       - "traefik.http.routers.backend-api.tls.certresolver=myresolver"
       - "traefik.http.routers.backend-api.service=backend-svc"
@@ -43,14 +43,14 @@ services:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
     environment:
-      VITE_API_URL: https://poc.d1dev.fr/api
+      VITE_API_URL: /api
     networks:
       - default
       - traefik_net
     labels:
       - "traefik.enable=true"
       # Route Frontend (root fallback)
-      - "traefik.http.routers.frontend.rule=Host(`poc.d1dev.fr`)"
+      - "traefik.http.routers.frontend.rule=Host(`poc.d1dev.fr`) || Host(`preprod-po.d1dev.fr`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=myresolver"
       - "traefik.http.routers.frontend.service=frontend-svc"
