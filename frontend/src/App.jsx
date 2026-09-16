@@ -31,6 +31,13 @@ export function App() {
   const [generatedToken, setGeneratedToken] = useState('');
   const [resetStep, setResetStep] = useState(1);
 
+  // RAG AI State
+  const [showRagModal, setShowRagModal] = useState(false);
+  const [ragQuestion, setRagQuestion] = useState('');
+  const [ragAnswer, setRagAnswer] = useState('');
+  const [askingRag, setAskingRag] = useState(false);
+  const [ragSource, setRagSource] = useState('');
+
   // Notifications State
   const [notifications, setNotifications] = useState([]);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -160,6 +167,41 @@ export function App() {
     setToken('');
     localStorage.removeItem('jwt_token');
     showToast('Logged out from JWT session', 'info');
+  };
+
+  const handleAskRag = async (e) => {
+    e.preventDefault();
+    if (!ragQuestion) return;
+    if (!token) {
+      setShowLoginModal(true);
+      showToast('Please log in with JWT to use AI Assistant', 'warning');
+      return;
+    }
+
+    setAskingRag(true);
+    setRagAnswer('');
+    try {
+      const response = await fetch(`${API_BASE}/rag/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ question: ragQuestion })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to query RAG Proxy');
+      }
+
+      const data = await response.json();
+      setRagAnswer(data.answer);
+      setRagSource(data.source);
+    } catch (err) {
+      showToast(err.message, 'danger');
+    } finally {
+      setAskingRag(false);
+    }
   };
 
   const handleUpdateProfile = async (e) => {
@@ -394,6 +436,10 @@ export function App() {
               <i className="fas fa-lock"></i> TLS Encrypted
             </span>
 
+            <button className="btn btn-warning btn-sm d-flex align-items-center gap-1 fw-bold text-dark" onClick={() => setShowRagModal(true)}>
+              <i className="fas fa-robot"></i> AI RAG Mistral
+            </button>
+
             {token ? (
               <div className="d-flex align-items-center gap-2">
                 {/* Notifications Dropdown */}
@@ -453,6 +499,54 @@ export function App() {
 
       {/* Main Container */}
       <div className="container my-4">
+
+        {/* RAG AI Assistant Modal */}
+        {showRagModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content shadow">
+                <div className="modal-header bg-warning text-dark">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-robot me-2"></i>Assistant IA Mistral (Proxy RAG)</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowRagModal(false)}></button>
+                </div>
+                <form onSubmit={handleAskRag}>
+                  <div className="modal-body">
+                    <p className="text-muted small mb-3">
+                      Posez une question sur le catalogue. La requête est transmise au proxy Symfony qui enrichit le prompt avec le contexte PostgreSQL avant d'interroger Mistral AI.
+                    </p>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Votre question</label>
+                      <input type="text" className="form-control" placeholder="ex: Quels produits sont disponibles en stock sous 50$ ?" value={ragQuestion} onChange={(e) => setRagQuestion(e.target.value)} required />
+                    </div>
+
+                    {askingRag && (
+                      <div className="text-center py-3 text-muted">
+                        <i className="fas fa-spinner fa-spin me-2"></i>Génération RAG en cours...
+                      </div>
+                    )}
+
+                    {ragAnswer && (
+                      <div className="alert alert-secondary mt-3">
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <strong className="text-dark"><i className="fas fa-brain me-1 text-warning"></i>Réponse de l'Assistant :</strong>
+                          <span className="badge bg-dark">{ragSource}</span>
+                        </div>
+                        <p className="mb-0 style-pre-wrap">{ragAnswer}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowRagModal(false)}>Fermer</button>
+                    <button type="submit" className="btn btn-warning fw-bold text-dark" disabled={askingRag}>
+                      {askingRag ? 'Analyse...' : 'Interroger IA'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* JWT Login Modal */}
         {showLoginModal && (

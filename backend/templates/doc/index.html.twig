@@ -17,6 +17,9 @@
             <button class="nav-link active fw-bold" id="arch-tab" data-bs-toggle="pill" data-bs-target="#arch-pane" type="button" role="tab"><i class="fas fa-sitemap me-2"></i>Architecture Système & Séquence</button>
         </li>
         <li class="nav-item" role="presentation">
+            <button class="nav-link fw-bold" id="rag-tab" data-bs-toggle="pill" data-bs-target="#rag-pane" type="button" role="tab"><i class="fas fa-robot me-2"></i>Proxy RAG & IA Mistral</button>
+        </li>
+        <li class="nav-item" role="presentation">
             <button class="nav-link fw-bold" id="solid-tab" data-bs-toggle="pill" data-bs-target="#solid-pane" type="button" role="tab"><i class="fas fa-cubes me-2"></i>Principes SOLID</button>
         </li>
         <li class="nav-item" role="presentation">
@@ -27,6 +30,9 @@
     <div class="tab-content bg-white p-4 rounded shadow-sm border" id="docTabsContent">
         <div class="tab-pane fade show active" id="arch-pane" role="tabpanel">
             <div id="arch-content"></div>
+        </div>
+        <div class="tab-pane fade" id="rag-pane" role="tabpanel">
+            <div id="rag-content"></div>
         </div>
         <div class="tab-pane fade" id="solid-pane" role="tabpanel">
             <div id="solid-content"></div>
@@ -49,6 +55,7 @@
         mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
         const rawArch = {{ architectureDoc|json_encode|raw }};
+        const rawRag = {{ ragDoc|json_encode|raw }};
         const rawSolid = {{ solidDoc|json_encode|raw }};
         const rawDeploy = {{ deploymentDoc|json_encode|raw }};
 
@@ -68,6 +75,7 @@
         }
 
         renderMarkdown(rawArch, "arch-content");
+        renderMarkdown(rawRag, "rag-content");
         renderMarkdown(rawSolid, "solid-content");
         renderMarkdown(rawDeploy, "deploy-content");
 

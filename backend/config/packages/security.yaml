@@ -41,6 +41,7 @@ security:
         - { path: ^/api/health, roles: PUBLIC_ACCESS }
         - { path: ^/api/login_check, roles: PUBLIC_ACCESS }
         - { path: ^/api/client_logs, roles: PUBLIC_ACCESS }
+        - { path: ^/api/rag, roles: ROLE_USER }
         - { path: ^/api/products, roles: PUBLIC_ACCESS, methods: [GET] }
         - { path: ^/api/products, roles: ROLE_USER, methods: [POST, PUT, PATCH] }
         - { path: ^/api/products, roles: ROLE_ADMIN, methods: [DELETE] }
