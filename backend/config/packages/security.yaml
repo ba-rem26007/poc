@@ -38,6 +38,7 @@ security:
     access_control:
         - { path: ^/admin, roles: ROLE_ADMIN }
         - { path: ^/doc, roles: ROLE_USER }
+        - { path: ^/api/deploy_webhook, roles: PUBLIC_ACCESS }
         - { path: ^/api/health, roles: PUBLIC_ACCESS }
         - { path: ^/api/login_check, roles: PUBLIC_ACCESS }
         - { path: ^/api/client_logs, roles: PUBLIC_ACCESS }
