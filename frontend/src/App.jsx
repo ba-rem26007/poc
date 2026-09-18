@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { sendErrorToBackend } from './logger';
+import { ProductCard } from './components/figma/ProductCard';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://localhost/api';
 
@@ -15,6 +16,16 @@ export function App() {
   const [loginError, setLoginError] = useState('');
   const [authenticating, setAuthenticating] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Cart State
+  const [cart, setCart] = useState([]);
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
+
+  // Orders State
+  const [orders, setOrders] = useState([]);
+  const [showOrdersModal, setShowOrdersModal] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Profile Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -104,6 +115,27 @@ export function App() {
     }
   };
 
+  const fetchUserOrders = async () => {
+    if (!token) return;
+    setLoadingOrders(true);
+    try {
+      const response = await fetch(`${API_BASE}/orders`, {
+        headers: {
+          'Accept': 'application/ld+json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setOrders(data['member'] || data['hydra:member'] || data || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
   const fetchNotifications = async () => {
     if (!token) return;
     try {
@@ -127,8 +159,65 @@ export function App() {
     } else {
       setProfile({ fullName: '', email: '', isTwoFactorEnabled: false });
       setNotifications([]);
+      setOrders([]);
     }
   }, [token]);
+
+  const handleAddToCart = (product) => {
+    const pId = product.id || product['@id'].split('/').pop();
+    setCart((prevCart) => {
+      const existing = prevCart.find((i) => i.productId === pId);
+      if (existing) {
+        return prevCart.map((i) =>
+          i.productId === pId ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [...prevCart, { productId: pId, product, quantity: 1 }];
+    });
+    showToast(`Produit "${product.name}" ajouté au panier !`, 'success');
+  };
+
+  const handleCheckout = async () => {
+    if (!token) {
+      setShowLoginModal(true);
+      showToast('Veuillez vous connecter pour valider votre commande', 'warning');
+      return;
+    }
+
+    if (cart.length === 0) return;
+
+    setCheckingOut(true);
+    try {
+      const itemsPayload = cart.map((i) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+      }));
+
+      const response = await fetch(`${API_BASE}/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ items: itemsPayload }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Échec du règlement de la commande');
+      }
+
+      const data = await response.json();
+      setCart([]);
+      setShowCartModal(false);
+      showToast(`Commande #${data.orderId} payée avec succès ($${data.totalAmount}) !`, 'success');
+    } catch (err) {
+      showToast(err.message, 'danger');
+    } finally {
+      setCheckingOut(false);
+    }
+  };
+
+  const cartTotal = cart.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -176,12 +265,8 @@ export function App() {
     setAskingRag(true);
     setRagAnswer('');
     try {
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const response = await fetch(`${API_BASE}/rag/ask`, {
         method: 'POST',
@@ -189,9 +274,7 @@ export function App() {
         body: JSON.stringify({ question: ragQuestion })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to query RAG Proxy');
-      }
+      if (!response.ok) throw new Error('Failed to query RAG Proxy');
 
       const data = await response.json();
       setRagAnswer(data.answer);
@@ -435,12 +518,27 @@ export function App() {
               <i className="fas fa-lock"></i> TLS Encrypted
             </span>
 
+            {/* Shopping Cart Button */}
+            <button className="btn btn-outline-warning btn-sm position-relative d-flex align-items-center gap-1" onClick={() => setShowCartModal(true)}>
+              <i className="fas fa-shopping-cart"></i> Panier
+              {cart.length > 0 && (
+                <span className="badge rounded-pill bg-danger ms-1">
+                  {cart.reduce((s, i) => s + i.quantity, 0)}
+                </span>
+              )}
+            </button>
+
             <button className="btn btn-warning btn-sm d-flex align-items-center gap-1 fw-bold text-dark" onClick={() => setShowRagModal(true)}>
               <i className="fas fa-robot"></i> AI RAG Mistral
             </button>
 
             {token ? (
               <div className="d-flex align-items-center gap-2">
+                {/* Orders Button */}
+                <button className="btn btn-outline-light btn-sm d-flex align-items-center gap-1" onClick={() => { fetchUserOrders(); setShowOrdersModal(true); }}>
+                  <i className="fas fa-receipt"></i> Commandes
+                </button>
+
                 {/* Notifications Dropdown */}
                 <div className="position-relative">
                   <button className="btn btn-outline-light btn-sm position-relative" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}>
@@ -498,6 +596,103 @@ export function App() {
 
       {/* Main Container */}
       <div className="container my-4">
+
+        {/* Shopping Cart Modal */}
+        {showCartModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content shadow">
+                <div className="modal-header bg-warning text-dark">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-shopping-cart me-2"></i>Mon Panier d'Achats</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowCartModal(false)}></button>
+                </div>
+                <div className="modal-body">
+                  {cart.length === 0 ? (
+                    <p className="text-muted text-center py-4">Votre panier est vide.</p>
+                  ) : (
+                    <div>
+                      <div className="table-responsive">
+                        <table className="table align-middle">
+                          <thead>
+                            <tr>
+                              <th>Produit</th>
+                              <th>Prix unitaire</th>
+                              <th>Quantité</th>
+                              <th>Total</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cart.map((item, idx) => (
+                              <tr key={idx}>
+                                <td className="fw-semibold">{item.product.name}</td>
+                                <td>${item.product.price}</td>
+                                <td>
+                                  <input type="number" min="1" className="form-control form-control-sm" style={{ width: '70px' }} value={item.quantity} onChange={(e) => {
+                                    const qty = parseInt(e.target.value) || 1;
+                                    setCart(cart.map((i) => i.productId === item.productId ? { ...i, quantity: qty } : i));
+                                  }} />
+                                </td>
+                                <td className="fw-bold">${(item.product.price * item.quantity).toFixed(2)}</td>
+                                <td>
+                                  <button className="btn btn-sm btn-outline-danger" onClick={() => setCart(cart.filter((i) => i.productId !== item.productId))}>
+                                    <i className="fas fa-trash"></i>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center border-top pt-3">
+                        <h5 className="fw-bold mb-0">Total : ${cartTotal.toFixed(2)}</h5>
+                        <button className="btn btn-success fw-bold d-flex align-items-center gap-2" onClick={handleCheckout} disabled={checkingOut}>
+                          <i className="fas fa-credit-card"></i> {checkingOut ? 'Règlement...' : 'Procéder au Paiement TLS'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Orders Modal */}
+        {showOrdersModal && (
+          <div className="modal d-block bg-dark bg-opacity-50" tabIndex="-1">
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content shadow">
+                <div className="modal-header bg-dark text-white">
+                  <h5 className="modal-title fw-bold"><i className="fas fa-receipt me-2 text-info"></i>Mes Commandes</h5>
+                  <button type="button" className="btn-close btn-close-white" onClick={() => setShowOrdersModal(false)}></button>
+                </div>
+                <div className="modal-body">
+                  {loadingOrders ? (
+                    <div className="text-center py-4 text-muted"><i className="fas fa-spinner fa-spin me-2"></i>Chargement de l'historique...</div>
+                  ) : orders.length === 0 ? (
+                    <p className="text-muted text-center py-4">Aucune commande enregistrée.</p>
+                  ) : (
+                    <div className="d-flex flex-column gap-3">
+                      {orders.map((o, idx) => (
+                        <div key={idx} className="card border shadow-sm">
+                          <div className="card-body d-flex justify-content-between align-items-center">
+                            <div>
+                              <h6 className="fw-bold mb-1">Commande #{o.id}</h6>
+                              <p className="text-muted small mb-0">Date : {new Date(o.createdAt).toLocaleString()}</p>
+                              <span className="badge bg-success mt-1">{o.status}</span>
+                            </div>
+                            <h5 className="fw-bold text-primary mb-0">${o.totalAmount}</h5>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* RAG AI Assistant Modal */}
         {showRagModal && (
@@ -789,33 +984,20 @@ export function App() {
                 const available = product.available ?? product.isAvailable;
                 const productId = product.id || product['@id'].split('/').pop();
                 return (
-                  <div key={product.id || product['@id']} className="card border-0 shadow-sm">
-                    <div className="card-body d-flex justify-content-between align-items-center">
-                      <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                          <h6 className="fw-bold mb-0">{product.name}</h6>
-                          {available ? (
-                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill">
-                              <i className="fas fa-check-circle me-1"></i>In Stock
-                            </span>
-                          ) : (
-                            <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">
-                              <i className="fas fa-times-circle me-1"></i>Out of Stock
-                            </span>
-                          )}
-                        </div>
-                        <p className="card-text text-muted small mb-2">{product.description || 'No description provided.'}</p>
-                        <span className="fw-bold fs-5 text-dark">${typeof product.price === 'number' ? product.price.toFixed(2) : product.price}</span>
-                      </div>
-
-                      <div className="d-flex gap-1">
-                        <button className="btn btn-outline-primary btn-sm p-2" title="Edit Product" onClick={() => setEditingProduct(product)}>
-                          <i className="fas fa-edit"></i>
-                        </button>
-                        <button className="btn btn-outline-danger btn-sm p-2" title="Delete Product" onClick={() => handleDeleteProduct(productId)}>
-                          <i className="fas fa-trash"></i>
-                        </button>
-                      </div>
+                  <div key={product.id || product['@id']} className="position-relative">
+                    <ProductCard
+                      id={productId}
+                      name={product.name}
+                      description={product.description}
+                      price={product.price}
+                      isAvailable={available}
+                      onEdit={() => setEditingProduct(product)}
+                      onDelete={() => handleDeleteProduct(productId)}
+                    />
+                    <div className="position-absolute bottom-0 end-0 p-3">
+                      <button className="btn btn-success btn-sm d-flex align-items-center gap-1 fw-bold" onClick={() => handleAddToCart(product)}>
+                        <i className="fas fa-cart-plus"></i> Ajouter au Panier
+                      </button>
                     </div>
                   </div>
                 );

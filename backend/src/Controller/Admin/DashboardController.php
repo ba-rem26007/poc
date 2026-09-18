@@ -3,6 +3,7 @@
 namespace App\Controller\Admin;
 
 use App\Entity\ClientLog;
+use App\Entity\Order;
 use App\Entity\Product;
 use App\Entity\User;
 use EasyCorp\Bundle\EasyAdminBundle\Attribute\AdminDashboard;
@@ -31,6 +32,7 @@ class DashboardController extends AbstractDashboardController
     {
         yield MenuItem::linkToDashboard('Dashboard', 'fa fa-home');
         yield MenuItem::linkToCrud('Products', 'fas fa-box', Product::class);
+        yield MenuItem::linkToCrud('Commandes', 'fas fa-shopping-cart', Order::class);
         yield MenuItem::linkToCrud('Users', 'fas fa-users', User::class);
         yield MenuItem::linkToCrud('Logs Client', 'fas fa-bug', ClientLog::class);
         yield MenuItem::linkToUrl('Documentation & ADRs', 'fas fa-sitemap', '/doc');
